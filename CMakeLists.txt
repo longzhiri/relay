@@ -1,4 +1,6 @@
-﻿cmake_minimum_required (VERSION 3.8)
+﻿cmake_minimum_required (VERSION 3.6)
+
+set(CMAKE_VERBOSE_MAKEFILE ON)
 
 project(relay)
 
@@ -13,6 +15,7 @@ add_library(relay STATIC ${RELAY_LIB_SRC})
 add_executable (relay_test src/relay_test.c)
 
 if(WIN32)
+    set(ZMQ_LIB libzmq-mt-s-4_3_3)
 	set(RELAY_PLATFORM_LINK_LIBRARIES WS2_32 iphlpapi Rpcrt4)
 	
 	set(CompilerFlags
@@ -27,7 +30,11 @@ if(WIN32)
 	foreach(CompilerFlag ${CompilerFlags})
 		string(REPLACE "/MD" "/MT" ${CompilerFlag} "${${CompilerFlag}}")
 	endforeach()
-
 endif()
 
-target_link_libraries(relay_test libczmq libzmq-mt-s-4_3_3 relay ${RELAY_PLATFORM_LINK_LIBRARIES})
+if (UNIX AND NOT APPLE)
+    set(ZMQ_LIB zmq)
+    set(RELAY_PLATFORM_LINK_LIBRARIES stdc++ pthread)
+endif()
+
+target_link_libraries(relay_test czmq ${ZMQ_LIB} relay ${RELAY_PLATFORM_LINK_LIBRARIES})

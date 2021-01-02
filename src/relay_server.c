@@ -2,7 +2,6 @@
 #include "common.h"
 #include "relay.h"
 
-
 typedef struct _client {
     uint16_t identity;
     client_state state;
@@ -15,29 +14,35 @@ struct _relay_server {
     zhashx_t* session_ids;
     zsock_t* router;
     uint16_t next_session_id;
-    
+
     zsock_t* fp;
     zsock_t* bp;
 };
 
-static size_t s_bernstein_hash_uint64(const void* key) {
-    uint64_t k = (uint64_t)key;
+static size_t s_bernstein_hash_uint32(const void* key)
+{
+    uint32_t k = (uint32_t)key;
     const char* pointer = (const char*)&k;
     size_t key_hash = 0;
-    while (*pointer)
+    size_t i = 0;
+    for (i = 0; i < sizeof(uint32_t); i++) {
         key_hash = 33 * key_hash ^ *pointer++;
+    }
     return key_hash;
 }
 
-static void* s_hash_key_dup(const void* key) {
+static void* s_hash_key_dup(const void* key)
+{
     return (void*)key;
 }
 
-static int s_hash_key_cmp(const void* key1, const void* key2) {
-    return key1 == key2?0:1;
+static int s_hash_key_cmp(const void* key1, const void* key2)
+{
+    return key1 == key2 ? 0 : 1;
 }
 
-static int64_t check_latest_client_time(relay_server* s) {
+static int64_t check_latest_client_time(relay_server* s)
+{
     client* c = (client*)zlist_first(s->clients);
     int64_t latest_time = INT64_MAX;
     while (c) {
@@ -51,14 +56,14 @@ static int64_t check_latest_client_time(relay_server* s) {
     }
     if (latest_time == INT64_MAX) {
         return -1;
-    }
-    else {
+    } else {
         int64_t now = zclock_time();
-        return latest_time > now ? latest_time - now: 0;
+        return latest_time > now ? latest_time - now : 0;
     }
 }
 
-static client* s_index_client(relay_server* s, uint16_t identity, bool create_if_not_exist) {
+static client* s_index_client(relay_server* s, uint16_t identity, bool create_if_not_exist)
+{
     client* c = (client*)zlist_first(s->clients);
     while (c) {
         if (c->identity == identity) {
@@ -81,7 +86,8 @@ static client* s_index_client(relay_server* s, uint16_t identity, bool create_if
     return c;
 }
 
-static zframe_t* s_create_identity_frame(uint16_t identity) {
+static zframe_t* s_create_identity_frame(uint16_t identity)
+{
     size_t sz = 1;
     if (identity > 256) {
         sz++;
@@ -90,15 +96,14 @@ static zframe_t* s_create_identity_frame(uint16_t identity) {
     byte* data = zframe_data(idf);
     if (sz == 2) {
         *(uint16_t*)data = identity;
-    }
-    else {
+    } else {
         *data = (byte)identity;
     }
     return idf;
 }
 
-
-static void s_broadcast(relay_server* s, zframe_t* f) {
+static void s_broadcast(relay_server* s, zframe_t* f)
+{
     client* loop_c = zlist_first(s->clients);
     while (loop_c) {
         if (loop_c->state == STA_CONNECTED) {
@@ -106,10 +111,8 @@ static void s_broadcast(relay_server* s, zframe_t* f) {
 
             bool ok = false;
             if (zframe_send(&idf, s->router, ZFRAME_DONTWAIT | ZFRAME_MORE) != 0) {
-            }
-            else if (zframe_send(&f, s->router, ZFRAME_DONTWAIT | ZFRAME_REUSE) != 0) {
-            }
-            else {
+            } else if (zframe_send(&f, s->router, ZFRAME_DONTWAIT | ZFRAME_REUSE) != 0) {
+            } else {
                 ok = true;
             }
             if (!ok) {
@@ -120,7 +123,8 @@ static void s_broadcast(relay_server* s, zframe_t* f) {
     }
 }
 
-static bool s_unicast(relay_server* s, client* target_c, zframe_t** fs, size_t nf) {
+static bool s_unicast(relay_server* s, client* target_c, zframe_t** fs, size_t nf)
+{
     zframe_t* idf = s_create_identity_frame(target_c->identity);
 
     if (zframe_send(&idf, s->router, ZFRAME_DONTWAIT | ZFRAME_MORE) != 0) {
@@ -140,7 +144,8 @@ static bool s_unicast(relay_server* s, client* target_c, zframe_t** fs, size_t n
     return true;
 }
 
-static void s_close_client(relay_server* s, client** c) {
+static void s_close_client(relay_server* s, client** c)
+{
     if (!c || !*c) {
         return;
     }
@@ -150,7 +155,8 @@ static void s_close_client(relay_server* s, client** c) {
     *c = NULL;
 }
 
-zframe_t* s_encode_clients_identity(relay_server* s) {
+zframe_t* s_encode_clients_identity(relay_server* s)
+{
     zframe_t* f = zframe_new(NULL, sizeof(uint16_t) * (1 + zlist_size(s->clients)));
     byte* buf = zframe_data(f);
     buf += 2;
@@ -171,7 +177,8 @@ zframe_t* s_encode_clients_identity(relay_server* s) {
     return f2;
 }
 
-static bool s_process_msg(relay_server* s, client* c, zmsg_t* msg) {
+static bool s_process_msg(relay_server* s, client* c, zmsg_t* msg)
+{
     zframe_t* header = zmsg_pop(msg);
     if (header == NULL || zframe_size(header) != MSG_HEADER_SIZE) {
         LOG_SERVER("E: received an invalid size msg");
@@ -222,18 +229,16 @@ static bool s_process_msg(relay_server* s, client* c, zmsg_t* msg) {
         client* loop_c = (client*)zlist_first(s->clients);
         while (loop_c) {
             if (loop_c != c) {
-                uint64_t sk = encode_session_key(loop_c->identity, c->identity);
+                uint32_t sk = encode_session_key(loop_c->identity, c->identity);
                 if (zhashx_lookup(s->session_ids, (void*)sk) != NULL) {
                     zhashx_update(s->session_ids, (void*)sk, (void*)s->next_session_id);
-                }
-                else {
+                } else {
                     zhashx_insert(s->session_ids, (void*)sk, (void*)s->next_session_id);
                     LOG_SERVER("DEBUGING: session_id(%d) id(%d)-id(%d) sk(%d) ", s->next_session_id, loop_c->identity, c->identity, sk);
                 }
             }
             loop_c = (client*)zlist_next(s->clients);
         }
-
 
         // Broadcast the onregister msg
         loop_c = (client*)zlist_first(s->clients);
@@ -271,7 +276,7 @@ static bool s_process_msg(relay_server* s, client* c, zmsg_t* msg) {
             return true;
         }
 
-        uint64_t sk = encode_session_key(c->identity, target_c->identity);
+        uint32_t sk = encode_session_key(c->identity, target_c->identity);
         uint16_t cur_sid = (uint16_t)zhashx_lookup(s->session_ids, (void*)sk);
         if (cur_sid != session_id) { // 过期的会话消息
             LOG_SERVER("E: received an expired normal message(session=%d) from (%d) to (%d), current session=%d sk=%d", session_id, c->identity, target_identity, cur_sid, sk);
@@ -300,7 +305,8 @@ static bool s_process_msg(relay_server* s, client* c, zmsg_t* msg) {
     return true;
 }
 
-static void s_process_timeout(relay_server* s) {
+static void s_process_timeout(relay_server* s)
+{
     int64_t now = zclock_time();
     client* loop_c = zlist_first(s->clients);
     client* next_c = NULL;
@@ -316,9 +322,8 @@ static void s_process_timeout(relay_server* s) {
             if (!s_unicast(s, loop_c, &hf, 1)) {
                 LOG_SERVER("E: sending the heartbeat msg to client(%d) failed", loop_c->identity);
                 s_close_client(s, &loop_c);
-            }
-            else {
-               // LOG_SERVER("I: send the hearbeat to client(%d)", loop_c->identity);
+            } else {
+                // LOG_SERVER("I: send the hearbeat to client(%d)", loop_c->identity);
                 loop_c->next_heartbeat_time = now + HEARTBEAT_INTERVAL;
             }
         }
@@ -331,7 +336,6 @@ static void s_process_timeout(relay_server* s) {
             s_broadcast(s, cf);
             zframe_destroy(&cf);
             s_close_client(s, &loop_c);
-
         }
 
         loop_c = next_c;
@@ -342,8 +346,8 @@ static void s_process_timeout(relay_server* s) {
     }
 }
 
-
-void server_loop(relay_server* s) {
+void server_loop(relay_server* s)
+{
     zpoller_t* poller = zpoller_new(s->router, s->bp, NULL);
     assert(poller);
 
@@ -391,8 +395,7 @@ void server_loop(relay_server* s) {
                 s_close_client(s, &c);
             }
             zmsg_destroy(&msg);
-        }
-        else {
+        } else {
             LOG_SERVER("E: unexpected");
         }
     }
@@ -404,7 +407,8 @@ void server_loop(relay_server* s) {
     LOG_SERVER("server destroyed");
 }
 
-relay_server* create_server(const char* bind_address) {
+relay_server* create_server(const char* bind_address)
+{
     relay_server* s = (relay_server*)malloc(sizeof(relay_server));
     if (s == NULL) {
         return s;
@@ -417,7 +421,7 @@ relay_server* create_server(const char* bind_address) {
     }
     s->clients = zlist_new();
     s->session_ids = zhashx_new();
-    zhashx_set_key_hasher(s->session_ids, s_bernstein_hash_uint64);
+    zhashx_set_key_hasher(s->session_ids, s_bernstein_hash_uint32);
     zhashx_set_key_destructor(s->session_ids, NULL);
     zhashx_set_key_duplicator(s->session_ids, s_hash_key_dup);
     zhashx_set_key_comparator(s->session_ids, s_hash_key_cmp);
@@ -428,7 +432,8 @@ relay_server* create_server(const char* bind_address) {
     return s;
 }
 
-void destroy_server(relay_server** ps) {
+void destroy_server(relay_server** ps)
+{
     if (!ps || !*ps) {
         return;
     }

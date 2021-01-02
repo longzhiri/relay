@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include "relay.h"
 #include <czmq.h>
 #include "common.h"
@@ -10,22 +11,24 @@ typedef struct _client {
     zactor_t* ca;
     uint16_t peers[CN];
     size_t pn;
-}client;
+} client;
 
 typedef struct _server {
     relay_server* rs;
     zactor_t* sa;
-}server;
+} server;
 
 client* AllClients[CN];
 
-static void server_actor(zsock_t* pipe, void* args) {
+static void server_actor(zsock_t* pipe, void* args)
+{
     zsock_signal(pipe, 0);
     relay_server* rs = (relay_server*)args;
     server_loop(rs);
 }
 
-static server setupServer(const char* bind_address) {
+static server setupServer(const char* bind_address)
+{
     server s;
     s.rs = create_server(bind_address);
     assert(s.rs);
@@ -34,20 +37,22 @@ static server setupServer(const char* bind_address) {
     return s;
 }
 
-
-static void on_client_start(relay_client* rc) {
+static void on_client_start(relay_client* rc)
+{
     LOG_TEST("relay client(%d) start", client_identity(rc));
 }
 
-static void on_client_stop(relay_client* rc) {
+static void on_client_stop(relay_client* rc)
+{
     LOG_TEST("relay client(%d) stop", client_identity(rc));
     client* c = AllClients[client_identity(rc) - 1];
     c->pn = 0;
 }
 
-static void on_peer_add(relay_client* rc, uint16_t peer) {
+static void on_peer_add(relay_client* rc, uint16_t peer)
+{
     LOG_TEST("relay client(%d) add peer(%d)", client_identity(rc), peer);
-    client* c = AllClients[client_identity(rc)-1];
+    client* c = AllClients[client_identity(rc) - 1];
     int i;
     for (i = 0; i < c->pn; i++) {
         if (c->peers[i] == peer) {
@@ -59,9 +64,10 @@ static void on_peer_add(relay_client* rc, uint16_t peer) {
     c->pn++;
 }
 
-static void on_peer_remove(relay_client* rc, uint16_t peer) {
+static void on_peer_remove(relay_client* rc, uint16_t peer)
+{
     LOG_TEST("relay client(%d) remove peer(%d)", client_identity(rc), peer);
-    client* c = AllClients[client_identity(rc)-1];
+    client* c = AllClients[client_identity(rc) - 1];
     int i;
     for (i = 0; i < c->pn; i++) {
         if (c->peers[i] == peer) {
@@ -73,11 +79,13 @@ static void on_peer_remove(relay_client* rc, uint16_t peer) {
     LOG_TEST("peer(%d) removed failed: doesn't exist", peer);
 }
 
-static void on_msg_in(relay_client* rc, unsigned char* content, size_t sz, uint16_t identity) {
+static void on_msg_in(relay_client* rc, unsigned char* content, size_t sz, uint16_t identity)
+{
     LOG_TEST("relay client(%d) received an msg(size=%d) from %d: %s", client_identity(rc), sz, identity, content);
 }
 
-static void client_actor(zsock_t* pipe, void* args) {
+static void client_actor(zsock_t* pipe, void* args)
+{
     zsock_signal(pipe, 0);
     client* c = (client*)args;
 
@@ -118,24 +126,22 @@ static void client_actor(zsock_t* pipe, void* args) {
         if (strcmp(cstr, "$TERM") == 0) {
             zstr_free(&cstr);
             break;
-        }
-        else if (strcmp(cstr, "START") == 0) {
+        } else if (strcmp(cstr, "START") == 0) {
             if (!rc) {
                 rc = create_client(c->id, SA, cb);
             }
             start = true;
-        }
-        else if (strcmp(cstr, "STOP") == 0) {
+        } else if (strcmp(cstr, "STOP") == 0) {
             destroy_client(&rc);
             c->pn = 0;
             start = false;
         }
         zstr_free(&cstr);
-     }
+    }
 }
 
-
-void TestRelay() {
+void TestRelay()
+{
     LOG_TEST("test starting...");
     server s = setupServer(SA);
 
@@ -153,11 +159,11 @@ void TestRelay() {
     }
 
     zpoller_t* poller = zpoller_new(NULL);
-    
+
     client* sc = NULL;
     int64_t frame_count = 0;
     while (true) {
-        zpoller_wait(poller, rand()%20000 + 10000);
+        zpoller_wait(poller, rand() % 20000 + 10000);
         if (zpoller_terminated(poller)) {
             break;
         }
@@ -170,17 +176,14 @@ void TestRelay() {
                 destroy_server(&s.rs);
                 zactor_destroy(&s.sa);
                 LOG_TEST("server destoyed");
-            }
-            else {
+            } else {
                 s = setupServer(SA);
             }
-        }
-        else {
+        } else {
             if (!sc) {
                 sc = AllClients[rand() % CN];
                 zstr_send(sc->ca, "STOP");
-            }
-            else {
+            } else {
                 zstr_send(sc->ca, "START");
                 sc = NULL;
             }
@@ -190,7 +193,8 @@ void TestRelay() {
     LOG_TEST("Test done...");
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     TestRelay();
     return 0;
 }
