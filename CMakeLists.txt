@@ -15,7 +15,7 @@ add_library(relay STATIC ${RELAY_LIB_SRC})
 add_executable (relay_test src/relay_test.c)
 
 if(WIN32)
-    set(ZMQ_LIB libzmq-mt-s-4_3_3)
+    set(ZMQ_LIB libzmq-mt-s-4_3_3 libczmq)
 	set(RELAY_PLATFORM_LINK_LIBRARIES WS2_32 iphlpapi Rpcrt4)
 	
 	set(CompilerFlags
@@ -33,8 +33,8 @@ if(WIN32)
 endif()
 
 if (UNIX AND NOT APPLE)
-    set(ZMQ_LIB zmq)
+    set(ZMQ_LIB zmq czmq)
     set(RELAY_PLATFORM_LINK_LIBRARIES stdc++ pthread)
 endif()
 
-target_link_libraries(relay_test czmq ${ZMQ_LIB} relay ${RELAY_PLATFORM_LINK_LIBRARIES})
+target_link_libraries(relay_test ${ZMQ_LIB} relay ${RELAY_PLATFORM_LINK_LIBRARIES})
