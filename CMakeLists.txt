@@ -33,7 +33,7 @@ if(WIN32)
 endif()
 
 if (UNIX AND NOT APPLE)
-    set(ZMQ_LIB zmq czmq)
+    set(ZMQ_LIB czmq zmq)
     set(RELAY_PLATFORM_LINK_LIBRARIES stdc++ pthread)
 endif()
 
