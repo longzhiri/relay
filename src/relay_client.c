@@ -4,13 +4,11 @@
 
 #define REGISTER_TIMEOUT 5000
 
-
 typedef struct _peer_client {
     uint16_t identity;
     client_state state;
     uint16_t session_id;
-}peer_client;
-
+} peer_client;
 
 struct _relay_client {
     uint16_t identity;
@@ -19,7 +17,6 @@ struct _relay_client {
 
     zsock_t* conn;
     const char* server_address;
-
 
     int64_t next_heartbeat_time;
     int64_t expire_time;
@@ -39,11 +36,12 @@ typedef enum _cmd_type {
     CT_PEER_REMOVE,
     CT_CONNECTED,
     CT_DISCONNECTED,
-}cmd_type;
+} cmd_type;
 
 #define CMD_SIZE 11
 
-static void decode_cmd_header(zframe_t* f, cmd_type* ct, uint16_t* identity, zframe_t** pf) {
+static void decode_cmd_header(zframe_t* f, cmd_type* ct, uint16_t* identity, zframe_t** pf)
+{
     assert(zframe_size(f) == CMD_SIZE);
     byte* buf = zframe_data(f);
     *ct = *buf++;
@@ -52,7 +50,8 @@ static void decode_cmd_header(zframe_t* f, cmd_type* ct, uint16_t* identity, zfr
     *pf = (zframe_t*)decode_uint64(buf);
 }
 
-static void encode_cmd_header(zframe_t* f, cmd_type ct, uint16_t identity, void* ptr) {
+static void encode_cmd_header(zframe_t* f, cmd_type ct, uint16_t identity, void* ptr)
+{
     assert(zframe_size(f) == CMD_SIZE);
     byte* buf = zframe_data(f);
     *buf++ = ct;
@@ -61,7 +60,8 @@ static void encode_cmd_header(zframe_t* f, cmd_type ct, uint16_t identity, void*
     encode_uint64(buf, (uint64_t)ptr);
 }
 
-static bool s_send_cmd(void* dest, cmd_type ct, uint16_t identity, zframe_t* data) {
+static bool s_send_cmd(void* dest, cmd_type ct, uint16_t identity, zframe_t* data)
+{
     zframe_t* f = zframe_new(NULL, CMD_SIZE);
     encode_cmd_header(f, ct, identity, data);
     int ret = zframe_send(&f, dest, ZFRAME_DONTWAIT);
@@ -71,17 +71,16 @@ static bool s_send_cmd(void* dest, cmd_type ct, uint16_t identity, zframe_t* dat
     return ret == 0;
 }
 
-
-
-static bool s_create_socket(relay_client* rc) {
+static bool s_create_socket(relay_client* rc)
+{
     assert(!rc->conn);
     rc->conn = zsock_new(ZMQ_DEALER);
     assert(rc->conn);
 
     int never_reconnect = -1;
-   
+
     zmq_setsockopt(zsock_resolve(rc->conn), ZMQ_RECONNECT_IVL, &never_reconnect, sizeof(never_reconnect));
-    
+
     size_t sz = 2;
     if (rc->identity < 256) {
         sz = 1;
@@ -96,13 +95,15 @@ static bool s_create_socket(relay_client* rc) {
     return true;
 }
 
-static void s_destroy_socket(relay_client* rc) {
+static void s_destroy_socket(relay_client* rc)
+{
     if (rc->conn) {
         zsock_destroy(&rc->conn);
     }
 }
 
-static bool s_send_frames(relay_client* rc, zframe_t** fs, size_t nf) {
+static bool s_send_frames(relay_client* rc, zframe_t** fs, size_t nf)
+{
     size_t i;
     for (i = 0; i < nf; i++) {
         int flags = ZFRAME_DONTWAIT | ZFRAME_REUSE;
@@ -116,7 +117,8 @@ static bool s_send_frames(relay_client* rc, zframe_t** fs, size_t nf) {
     return true;
 }
 
-static bool s_decode_peer_client_identities(relay_client* rc, zframe_t* f, uint16_t session_id) {
+static bool s_decode_peer_client_identities(relay_client* rc, zframe_t* f, uint16_t session_id)
+{
     if (zframe_size(f) < sizeof(uint16_t)) {
         return false;
     }
@@ -141,19 +143,20 @@ static bool s_decode_peer_client_identities(relay_client* rc, zframe_t* f, uint1
     return true;
 }
 
-static int64_t s_check_latest_time(relay_client* rc) {
+static int64_t s_check_latest_time(relay_client* rc)
+{
     int64_t latest_time;
     if (rc->expire_time < rc->next_heartbeat_time) {
         latest_time = rc->expire_time;
-    }
-    else {
+    } else {
         latest_time = rc->next_heartbeat_time;
     }
     int64_t now = zclock_time();
     return latest_time > now ? latest_time - now : 0;
 }
 
-static bool s_start_client(relay_client* rc, zsock_t* pipe, bool* quit) {
+static bool s_start_client(relay_client* rc, zsock_t* pipe, bool* quit)
+{
     if (!s_create_socket(rc)) {
         *quit = true;
         return false;
@@ -176,6 +179,9 @@ static bool s_start_client(relay_client* rc, zsock_t* pipe, bool* quit) {
     zsock_t* ready = (zsock_t*)zpoller_wait(poller, REGISTER_TIMEOUT);
     if (ready == NULL) {
         LOG_CLIENT("E: wait to read the register rsp msg timeout");
+        if (zsys_interrupted) {
+            *quit = true;
+        }
         return false;
     }
     zmsg_t* rsp_msg = NULL;
@@ -230,7 +236,8 @@ static bool s_start_client(relay_client* rc, zsock_t* pipe, bool* quit) {
     return true;
 }
 
-static void s_stop_client(relay_client* rc, zsock_t* pipe) {
+static void s_stop_client(relay_client* rc, zsock_t* pipe)
+{
     s_destroy_socket(rc);
 
     if (rc->state == STA_CONNECTED) {
@@ -250,8 +257,8 @@ static void s_stop_client(relay_client* rc, zsock_t* pipe) {
     rc->state = STA_DISCONNECTED;
 }
 
-
-static peer_client* s_index_peer(relay_client* rc, uint16_t identity) {
+static peer_client* s_index_peer(relay_client* rc, uint16_t identity)
+{
     peer_client* loop_p = zlist_first(rc->peers);
     while (loop_p) {
         if (loop_p->identity == identity) {
@@ -262,7 +269,8 @@ static peer_client* s_index_peer(relay_client* rc, uint16_t identity) {
     return NULL;
 }
 
-static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
+static bool s_msg_loop(relay_client* rc, zsock_t* pipe)
+{
     zpoller_t* poller = zpoller_new(rc->conn, pipe, NULL);
     assert(poller);
 
@@ -287,8 +295,7 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
                 zframe_destroy(&hf);
                 rc->next_heartbeat_time += HEARTBEAT_INTERVAL;
             }
-        }
-        else if (ready == rc->conn) {
+        } else if (ready == rc->conn) {
             zmsg_t* msg = zmsg_recv(rc->conn);
             if (msg == NULL) {
                 continue;
@@ -297,7 +304,7 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
                 LOG_CLIENT("E: received an invalid size msg");
                 return false;
             }
-            
+
             rc->expire_time = zclock_time() + HEARTBEAT_TIMEOUT;
 
             zframe_t* hf = zmsg_pop(msg);
@@ -359,8 +366,7 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
                 }
                 if (!ok) {
                     LOG_CLIENT("E: no disconnected peer=%d  found", src_identity);
-                }
-                else {
+                } else {
                     s_send_cmd(pipe, CT_PEER_REMOVE, src_identity, NULL);
                 }
                 LOG_CLIENT("I: peer=%d is disconnected", src_identity);
@@ -395,8 +401,7 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
                     pc->session_id = session_id;
                     pc->state = STA_CONNECTED;
                     zlist_append(rc->peers, pc);
-                }
-                else {
+                } else {
                     pc->session_id = session_id;
                     pc->state = STA_CONNECTED;
                 }
@@ -418,7 +423,7 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
             }
 
             zframe_t* sf = zmsg_pop(msg);
-            
+
             // Check quit
             size_t szTerm = strlen("$TERM");
             if (zframe_size(sf) == szTerm && memcmp(zframe_data(sf), "$TERM", szTerm) == 0) {
@@ -436,7 +441,7 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
             }
 
             zframe_destroy(&sf);
-            
+
             if (zmsg_size(msg) != 1) {
                 LOG_CLIENT("E: received an invalid size cmd");
                 zmsg_destroy(&msg);
@@ -478,7 +483,8 @@ static bool s_msg_loop(relay_client* rc, zsock_t* pipe) {
     }
 }
 
-static void s_client_actor(zsock_t* pipe, void* args) {
+static void s_client_actor(zsock_t* pipe, void* args)
+{
     relay_client* rc = (relay_client*)args;
     zsock_signal(pipe, 0);
 
@@ -503,7 +509,8 @@ static void s_client_actor(zsock_t* pipe, void* args) {
     LOG_CLIENT("I: relay client=%d actor quit...", rc->identity);
 }
 
-relay_client* create_client(uint16_t identity, const char* server_address, relay_callback cb) {
+relay_client* create_client(uint16_t identity, const char* server_address, relay_callback cb)
+{
     if (!cb.on_msg_in || !cb.on_peer_add || !cb.on_peer_remove
         || !cb.on_start || !cb.on_stop) {
         LOG_CLIENT("E: create client failed: the relay_callback is invalid");
@@ -534,7 +541,8 @@ relay_client* create_client(uint16_t identity, const char* server_address, relay
     return rc;
 }
 
-void destroy_client(relay_client** prc) {
+void destroy_client(relay_client** prc)
+{
     if (!prc || !*prc) {
         return;
     }
@@ -548,7 +556,8 @@ void destroy_client(relay_client** prc) {
     *prc = NULL;
 }
 
-uint16_t client_identity(relay_client* rc) {
+uint16_t client_identity(relay_client* rc)
+{
     assert(rc);
     if (!rc) {
         return 0;
@@ -556,7 +565,8 @@ uint16_t client_identity(relay_client* rc) {
     return rc->identity;
 }
 
-int send_msg(relay_client* rc, uint16_t t_identity, unsigned char* content, size_t sz) {
+int send_msg(relay_client* rc, uint16_t t_identity, unsigned char* content, size_t sz)
+{
     if (rc->destroyed) {
         return -1;
     }
@@ -573,7 +583,8 @@ int send_msg(relay_client* rc, uint16_t t_identity, unsigned char* content, size
     return 0;
 }
 
-void process_cmd(relay_client* rc) {
+void process_cmd(relay_client* rc)
+{
     if (rc->destroyed) {
         return;
     }

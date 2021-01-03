@@ -138,6 +138,7 @@ static void client_actor(zsock_t* pipe, void* args)
         }
         zstr_free(&cstr);
     }
+    LOG_TEST("client=%d quit", c->id);
 }
 
 void TestRelay()
@@ -190,6 +191,8 @@ void TestRelay()
         }
         frame_count++;
     }
+
+    zclock_sleep(5000);
     LOG_TEST("Test done...");
 }
 
